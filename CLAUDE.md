@@ -8,7 +8,15 @@ Każda zmiana infrastruktury (Terraform, GCE/GCS/VPC, klaster Kubernetes, releas
 
 - Nie uruchamiaj lokalnie: `terraform apply`, `terraform destroy`, `terraform import`, `terraform state ...`, `scripts/deploy.sh`, `scripts/destroy.sh`, `scripts/green-blue-switch.sh deploy|switch|rollback`, `helm install|upgrade|uninstall`, `kubectl apply|delete|patch|scale`, `gcloud ... create|delete|update`, `gsutil cp|rm` do bucketów produkcyjnych.
 - Zmiana infrastruktury = edycja plików w repo → commit na branchu → PR → uruchomienie workflow przez GitHub Actions (`gh workflow run`, `gh run watch` są dozwolone po potwierdzeniu z użytkownikiem).
-- `.claude/settings.json` już blokuje `Bash(*deploy.sh*)`; ta zasada jest szersza i obowiązuje także tam, gdzie nie ma technicznej blokady.
+- Zasada jest egzekwowana technicznie przez `permissions.deny` w `.claude/settings.json` (plik jest w repo: wyjątek `!.claude/settings.json` w `.gitignore`, sprawdź `git ls-files .claude/`). Zablokowane:
+  - Terraform: `apply`, `destroy`, `import`, `taint`/`untaint`, `refresh`, `force-unlock`, `state mv|rm|push|replace-provider`, `workspace new|delete|select`;
+  - `gcloud` (create, delete, update, patch, add-*/remove-*/set-*, start/stop/reset/resize, deploy, cp/mv/rm/rsync, `config set`, `auth`), `gsutil` (cp, mv, rm, rsync, mb, rb, acl, iam, …), `kubectl` (apply, create, delete, patch, replace, scale, edit, label, drain, exec, `rollout restart|undo`, …), `helm` (install, upgrade, uninstall, delete, rollback);
+  - `scripts/deploy.sh`, `scripts/destroy.sh` oraz `green-blue-switch.sh deploy|switch|rollback`;
+  - odczyt `.env` i `.env.local` (narzędzie `Read` oraz `cat`/`grep`/`source` itp.); `.env.example` pozostaje czytelny.
+  - Reguły pokrywają też warianty: bez argumentów końcowych (`terraform apply`), z flagami globalnymi (`terraform -chdir=terraform apply`, `kubectl -n x delete`), wywołania przez `bash`/`sh`/`./`, `bash -c '...'`, `sudo`, `xargs` oraz polecenia łączone `&&`, `||`, `;`, `|`.
+  - Dozwolone zostają polecenia odczytowe, m.in. `terraform plan|output|validate|fmt`, `gcloud ... list|describe`, `gsutil ls`, `kubectl get|logs|describe`, `helm list|lint|template` i `green-blue-switch.sh status`.
+  - Ograniczenia: reguły to dopasowanie wzorców, nie sandbox — nie obejmują poleceń zdalnych (`ssh host "kubectl delete ..."`), skryptów wywołujących zablokowane polecenia w środku ani edycji plików. Nie omijaj blokady przeformułowaniem polecenia; jeśli zadanie jej wymaga, zatrzymaj się i zapytaj użytkownika.
+  - Przy dodawaniu nowego narzędzia lub skryptu zmieniającego stan dopisz odpowiednie reguły `deny` w tym samym PR.
 - Stan na dziś: w repo **nie ma jeszcze** katalogu `.github/workflows/`. Jeśli zadanie wymaga wdrożenia, zaproponuj dodanie workflow zamiast wdrażać ręcznie.
 
 ## Polecenia tylko do odczytu (bezpieczne)
