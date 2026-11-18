@@ -2,9 +2,9 @@
 Stress test klastra Spark — symuluje N analityków połączonych jednocześnie.
 Każdy analityk uruchamia CPU-heavy job (Pi Monte Carlo + aggregacje na dużym DF).
 """
+import sys
 import threading
 import time
-import sys
 from datetime import datetime
 
 MASTER_IP   = "34.38.35.111"

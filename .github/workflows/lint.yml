@@ -1,0 +1,76 @@
+name: Lint
+
+# Statyczna analiza kodu. Nie wymaga sekretów ani dostępu do GCP:
+# terraform init -backend=false, tylko odczyt repozytorium.
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: "1.9.8"
+  TFLINT_VERSION: "v0.53.0"
+  PYTHON_VERSION: "3.11"
+  RUFF_VERSION: "0.8.4"
+
+jobs:
+  terraform:
+    name: Terraform (fmt, validate, tflint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform init (bez backendu)
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - uses: terraform-linters/setup-tflint@v4.1.1
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+
+      - name: tflint init
+        env:
+          # Token wbudowany w uruchomienie (nie sekret repozytorium) - tylko limity API GitHub
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tflint --config="${GITHUB_WORKSPACE}/.tflint.hcl" --init
+
+      - name: tflint
+        run: tflint --config="${GITHUB_WORKSPACE}/.tflint.hcl" --format=compact
+
+  python:
+    name: Python (ruff)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: python -m pip install --disable-pip-version-check "ruff==${RUFF_VERSION}"
+
+      - name: ruff check
+        run: ruff check --output-format=github .

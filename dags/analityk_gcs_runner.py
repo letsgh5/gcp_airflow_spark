@@ -1,8 +1,9 @@
+from datetime import datetime
+
 from airflow import DAG
+from airflow.models.param import Param
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
-from airflow.models.param import Param
-from datetime import datetime
 
 
 def _download_from_gcs(bucket: str, analityk_id: str, script_name: str, run_dir: str) -> None:
