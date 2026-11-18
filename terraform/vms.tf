@@ -57,16 +57,16 @@ resource "google_compute_instance" "master" {
   }
 
   metadata = merge(local.common_metadata, {
-    startup-script                  = file("${path.module}/../scripts/master-init.sh")
-    tf_project_id                   = var.project_id
-    tf_join_bucket                  = local.join_bucket
-    tf_dag_bucket                   = local.dag_bucket
-    tf_analitycy                    = jsonencode(var.analitycy)
-    tf_airflow_admin_password       = var.airflow_admin_password
-    tf_airflow_analyst_password     = var.airflow_analyst_password
-    tf_jupyterhub_admin_password    = var.jupyterhub_admin_password
-    tf_jupyterhub_analyst_password  = var.jupyterhub_analyst_password
-    tf_grafana_admin_password       = var.grafana_admin_password
+    startup-script                 = file("${path.module}/../scripts/master-init.sh")
+    tf_project_id                  = var.project_id
+    tf_join_bucket                 = local.join_bucket
+    tf_dag_bucket                  = local.dag_bucket
+    tf_analitycy                   = jsonencode(var.analitycy)
+    tf_airflow_admin_password      = var.airflow_admin_password
+    tf_airflow_analyst_password    = var.airflow_analyst_password
+    tf_jupyterhub_admin_password   = var.jupyterhub_admin_password
+    tf_jupyterhub_analyst_password = var.jupyterhub_analyst_password
+    tf_grafana_admin_password      = var.grafana_admin_password
   })
 
   depends_on = [
@@ -78,7 +78,7 @@ resource "google_compute_instance" "master" {
 # ── Worker nodes (Spark + Airflow workery) ────────────────────────────────────
 locals {
   worker_config = {
-    "1" = { region = "europe-west4",    zone = "europe-west4-a" }
+    "1" = { region = "europe-west4", zone = "europe-west4-a" }
     "2" = { region = "europe-central2", zone = "europe-central2-a" }
   }
 }
