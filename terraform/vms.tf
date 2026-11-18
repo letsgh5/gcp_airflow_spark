@@ -78,7 +78,6 @@ resource "google_compute_instance" "master" {
 # ── Worker nodes (Spark + Airflow workery) ────────────────────────────────────
 locals {
   worker_config = {
-    "1" = { region = "europe-west4", zone = "europe-west4-a" }
     "2" = { region = "europe-central2", zone = "europe-central2-a" }
   }
 }
