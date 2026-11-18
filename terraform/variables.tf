@@ -40,7 +40,7 @@ variable "master_machine_type" {
 # workerzy: Airflow workery + Spark executory
 variable "worker_machine_type" {
   type    = string
-  default = "e2-standard-4" # 4 vCPU, 16 GB × 2 nody = 8 vCPU / 32 GB łącznie
+  default = "e2-standard-4" # 4 vCPU, 16 GB × 1 node; razem z masterem 6 vCPU (limit projektu: 8)
 }
 
 variable "allowed_cidr" {

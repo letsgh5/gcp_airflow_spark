@@ -1,7 +1,6 @@
 locals {
   # region → CIDR + zones dla workerów
   worker_regions = {
-    "europe-west4"    = { cidr = "10.0.1.0/24", zone = "europe-west4-a" }
     "europe-central2" = { cidr = "10.0.2.0/24", zone = "europe-central2-a" }
   }
 }
@@ -22,7 +21,7 @@ resource "google_compute_subnetwork" "subnet" {
   network       = google_compute_network.vpc.id
 }
 
-# worker-1 — europe-west4 (Holandia), worker-2 — europe-central2 (Warszawa)
+# worker-2 — europe-central2 (Warszawa); limit CPUS_ALL_REGIONS = 8 vCPU (master 2 + worker 4)
 resource "google_compute_subnetwork" "worker_subnet" {
   for_each      = local.worker_regions
   name          = "${var.course_name}-subnet-${each.key}"
