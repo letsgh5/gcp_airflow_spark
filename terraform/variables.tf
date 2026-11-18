@@ -49,8 +49,14 @@ variable "allowed_cidr" {
   default     = "0.0.0.0/0"
 }
 
+variable "ssh_public_key" {
+  description = "Treść publicznego klucza SSH (w CI: vars.SSH_PUBLIC_KEY). Gdy pusta, używany jest plik z ssh_pub_key_path."
+  type        = string
+  default     = ""
+}
+
 variable "ssh_pub_key_path" {
-  description = "Ścieżka do publicznego klucza SSH"
+  description = "Ścieżka do publicznego klucza SSH (fallback dla pracy lokalnej, gdy ssh_public_key jest pusta)"
   type        = string
   default     = "~/.ssh/id_ed25519.pub"
 }

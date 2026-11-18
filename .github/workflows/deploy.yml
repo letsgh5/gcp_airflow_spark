@@ -1,0 +1,166 @@
+name: Deploy
+
+# Ręczne wdrożenie infrastruktury. Domyślnie tylko lint + terraform plan.
+# apply i smoke test włączane świadomie przez inputy (domyślnie wyłączone).
+on:
+  workflow_dispatch:
+    inputs:
+      run_apply:
+        description: "Wykonaj terraform apply (zmienia infrastrukturę)"
+        type: boolean
+        default: false
+      run_smoke_test:
+        description: "Uruchom smoke test (Airflow/JupyterHub/Grafana) po wdrożeniu"
+        type: boolean
+        default: false
+
+# Jedno wdrożenie naraz; nie przerywamy trwającego apply.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: "1.9.8"
+  # Konfiguracja (Settings → Secrets and variables → Actions):
+  #   vars:    GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT,
+  #            TF_STATE_BUCKET, TF_STATE_PREFIX, SSH_PUBLIC_KEY
+  #   secrets: AIRFLOW_ADMIN_PASSWORD, AIRFLOW_ANALYST_PASSWORD, JUPYTERHUB_ADMIN_PASSWORD,
+  #            JUPYTERHUB_ANALYST_PASSWORD, GRAFANA_ADMIN_PASSWORD
+  TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+  TF_VAR_ssh_public_key: ${{ vars.SSH_PUBLIC_KEY }}
+  TF_VAR_airflow_admin_password: ${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
+  TF_VAR_airflow_analyst_password: ${{ secrets.AIRFLOW_ANALYST_PASSWORD }}
+  TF_VAR_jupyterhub_admin_password: ${{ secrets.JUPYTERHUB_ADMIN_PASSWORD }}
+  TF_VAR_jupyterhub_analyst_password: ${{ secrets.JUPYTERHUB_ANALYST_PASSWORD }}
+  TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  plan:
+    name: Terraform plan
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: google-github-actions/auth@v2.1.7
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ vars.TF_STATE_PREFIX }}"
+
+      - name: terraform plan
+        run: terraform plan -lock-timeout=5m
+
+  apply:
+    name: Terraform apply
+    if: ${{ inputs.run_apply }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Środowisko "production" pozwala wymusić ręczną akceptację (required reviewers).
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: google-github-actions/auth@v2.1.7
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ vars.TF_STATE_PREFIX }}"
+
+      # Plan zapisany tylko lokalnie na runnerze (zawiera hasła - nie wysyłamy go jako artefaktu).
+      - name: terraform plan
+        run: terraform plan -lock-timeout=5m -out=tfplan
+
+      - name: terraform apply
+        run: terraform apply -lock-timeout=5m tfplan
+
+  smoke-test:
+    name: Smoke test
+    # Działa po apply albo samodzielnie (apply pominięty) na istniejącej infrastrukturze.
+    if: ${{ !cancelled() && inputs.run_smoke_test && needs.plan.result == 'success' && (needs.apply.result == 'success' || needs.apply.result == 'skipped') }}
+    needs: [plan, apply]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: google-github-actions/auth@v2.1.7
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Odczyt IP mastera ze stanu
+        working-directory: terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ vars.TF_STATE_PREFIX }}"
+          echo "MASTER_IP=$(terraform output -raw master_external_ip)" >> "$GITHUB_ENV"
+
+      # Bootstrap mastera trwa ~10-12 min, stąd długie ponawianie.
+      # Wymaga, by runner mieścił się w allowed_cidr (domyślnie 0.0.0.0/0).
+      - name: Airflow /health
+        run: |
+          curl -fsS --retry 40 --retry-delay 30 --retry-connrefused --retry-all-errors \
+            --max-time 10 "http://${MASTER_IP}:30080/health" | tee health.json
+          jq -e '.metadatabase.status == "healthy" and .scheduler.status == "healthy"' health.json
+
+      - name: JupyterHub
+        run: |
+          curl -fsS --retry 10 --retry-delay 15 --retry-connrefused --retry-all-errors \
+            --max-time 10 "http://${MASTER_IP}:30088/hub/health"
+
+      - name: Grafana
+        run: |
+          curl -fsS --retry 10 --retry-delay 15 --retry-connrefused --retry-all-errors \
+            --max-time 10 "http://${MASTER_IP}:30300/api/health"

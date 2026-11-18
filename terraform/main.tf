@@ -1,5 +1,11 @@
 terraform {
   required_version = ">= 1.5"
+
+  # Bucket i prefix podawane przy init (bez sekretów w repo):
+  #   terraform init -backend-config="bucket=<bucket>" -backend-config="prefix=<prefix>"
+  # Lint/walidacja bez dostępu do stanu: terraform init -backend=false
+  backend "gcs" {}
+
   required_providers {
     google = {
       source  = "hashicorp/google"
